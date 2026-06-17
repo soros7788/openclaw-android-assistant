@@ -1,0 +1,19 @@
+project_root: ./examples/buggy_python_project
+file_path: metrics.py
+allowed_paths:
+  - metrics.py
+test_command:
+  - python
+  - -m
+  - pytest
+  - -q
+max_iterations: 3
+lsp:
+  command:
+    - pyright-langserver
+    - --stdio
+  language_id: python
+sandbox:
+  image: python:3.11-slim
+  timeout_seconds: 30
+  workdir: /app

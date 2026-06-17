@@ -9,6 +9,12 @@ from unittest.mock import MagicMock, patch
 from self_healing.config import HealConfig, LSPConfig, SandboxConfig
 from self_healing.state import AgentState
 
+try:
+    import langgraph  # noqa: F401
+    _LANGGRAPH_AVAILABLE = True
+except ImportError:
+    _LANGGRAPH_AVAILABLE = False
+
 
 def _build_config() -> HealConfig:
     return HealConfig(
@@ -39,6 +45,7 @@ def _initial_state() -> AgentState:
     }
 
 
+@unittest.skipUnless(_LANGGRAPH_AVAILABLE, "langgraph not installed; skipping e2e tests")
 class TestEndToEndGraph闭环(unittest.TestCase):
     """端到端验证 LangGraph 状态机的闭环流转"""
 

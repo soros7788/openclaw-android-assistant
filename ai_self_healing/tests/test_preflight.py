@@ -143,7 +143,7 @@ class PreflightTests(unittest.TestCase):
                 mock_sandbox.return_value = PreflightCheck("sandbox", True, "Docker daemon 可访问。")
                 from self_healing.cli import main
                 with patch("sys.stdout", new_callable=StringIO) as stdout:
-                    code = main(["--config", str(config_path), "--preflight-only"])
+                    code = main(["preflight", "--config", str(config_path)])
             self.assertEqual(code, 0)
             payload = json.loads(stdout.getvalue())
             self.assertTrue(payload["ok"])

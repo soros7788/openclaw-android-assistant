@@ -1,0 +1,15 @@
+{
+  "pid": 30398,
+  "started_at": "2026-06-17T13:31:39Z",
+  "last_event_at": "2026-06-17T13:31:39Z",
+  "files_analyzed": 1,
+  "runs": 1,
+  "fixes_applied": 0,
+  "recent_events": [
+    {
+      "time": "2026-06-17T13:31:39Z",
+      "status": "graph_error",
+      "error": "运行状态机需要安装 langgraph。"
+    }
+  ]
+}

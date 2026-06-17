@@ -7,6 +7,7 @@ from pathlib import Path
 from self_healing.config import load_config
 from self_healing.graph import build_graph
 from self_healing.patching.apply import read_target, write_target
+from self_healing.preflight import run_preflight
 from self_healing.state import AgentState
 
 
@@ -34,7 +35,24 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="运行 LangGraph + LSP + Docker AI 编码自愈流程。")
     parser.add_argument("--config", required=True, help="JSON/YAML 配置文件路径。")
     parser.add_argument("--report", default="", help="可选：写入最终 JSON 报告。")
+    parser.add_argument("--preflight-only", action="store_true", help="只执行运行前预检，不启动自愈流程。")
+    parser.add_argument("--skip-preflight", action="store_true", help="跳过运行前预检，直接启动自愈流程。")
     args = parser.parse_args(argv)
+
+    config = load_config(args.config)
+    if not args.skip_preflight:
+        preflight = run_preflight(config)
+        preflight_json = json.dumps(preflight.to_dict(), ensure_ascii=False, indent=2)
+        if args.preflight_only:
+            print(preflight_json)
+            if args.report:
+                Path(args.report).write_text(preflight_json, encoding="utf-8")
+            return 0 if preflight.ok else 2
+        if not preflight.ok:
+            print(preflight_json)
+            if args.report:
+                Path(args.report).write_text(preflight_json, encoding="utf-8")
+            return 2
 
     state, config = make_initial_state(args.config)
     app = build_graph(config)

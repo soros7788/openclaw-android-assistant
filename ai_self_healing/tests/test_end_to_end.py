@@ -63,8 +63,8 @@ class TestEndToEndGraph闭环(unittest.TestCase):
             ) as mock_lsp_cls, patch(
                 "self_healing.graph.create_sandbox"
             ) as mock_create_sandbox, patch(
-                "self_healing.graph.LLMHealer"
-            ) as mock_healer_cls, patch(
+                "self_healing.graph.create_healer"
+            ) as mock_create_healer, patch(
                 "self_healing.patching.apply.resolve_safe_path"
             ) as mock_resolve:
 
@@ -86,7 +86,7 @@ class TestEndToEndGraph闭环(unittest.TestCase):
 
                 mock_healer_instance = MagicMock()
                 mock_healer_instance.repair.side_effect = fake_repair
-                mock_healer_cls.return_value = mock_healer_instance
+                mock_create_healer.return_value = mock_healer_instance
 
                 # 真实 Path，指向存活中的临时目录
                 fake_path = fake_dir / "metrics.py"
@@ -203,10 +203,10 @@ class TestEndToEndGraph闭环(unittest.TestCase):
             "is_fixed": False,
         }
 
-        with patch("self_healing.graph.LLMHealer") as mock_cls:
+        with patch("self_healing.graph.create_healer") as mock_create_healer:
             mock_instance = MagicMock()
             mock_instance.repair.return_value = "fixed_code = 42\n"
-            mock_cls.return_value = mock_instance
+            mock_create_healer.return_value = mock_instance
 
             result = healer_node(state)
 

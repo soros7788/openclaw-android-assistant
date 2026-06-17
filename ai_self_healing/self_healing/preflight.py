@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from self_healing.config import HealConfig
+from self_healing.healer.factory import detect_provider_statuses, resolve_provider
 from self_healing.patching.safety import resolve_safe_path
 from self_healing.sandbox.docker_runner import docker_daemon_available
 
@@ -59,9 +60,43 @@ def _check_lsp_command(config: HealConfig) -> PreflightCheck:
 
 
 def _check_openai_key() -> PreflightCheck:
+    """保留向后兼容：仅检查 OpenAI Key，新代码请改用 _check_healer。"""
     if os.environ.get("OPENAI_API_KEY"):
         return PreflightCheck("openai_api_key", True, "OPENAI_API_KEY 已配置。")
     return PreflightCheck("openai_api_key", False, "缺少 OPENAI_API_KEY，Healer 无法调用默认 LLM。")
+
+
+def _check_healer(config: HealConfig) -> PreflightCheck:
+    """检查 Healer 后端可用性。
+
+    - provider=auto：任一后端可用即通过；最差情况下回退到 echo。
+    - provider=openai/anthropic/ollama：必须该后端可用才通过。
+    - provider=echo：始终通过。
+    """
+    requested = config.healer.provider.lower()
+    statuses = detect_provider_statuses(config.healer)
+    detail = "; ".join(f"{s.name}={'ok' if s.ok else 'no'}" for s in statuses)
+
+    if requested == "echo":
+        return PreflightCheck("healer", True, f"使用 echo 兜底后端（仅占位修复）。详情: {detail}")
+
+    if requested in {"openai", "anthropic", "ollama"}:
+        target = next((s for s in statuses if s.name == requested), None)
+        if target and target.ok:
+            return PreflightCheck("healer", True, f"Healer 后端 {requested} 可用：{target.message}")
+        msg = target.message if target else "未知后端"
+        return PreflightCheck("healer", False, f"Healer 后端 {requested} 不可用：{msg}")
+
+    # auto 模式：任意一个真实后端可用就 ok；否则降级到 echo（仍 ok 但提示）
+    selected, _ = resolve_provider(config.healer)
+    if selected != "echo":
+        return PreflightCheck("healer", True, f"auto 模式选用 {selected} 后端。详情: {detail}")
+    return PreflightCheck(
+        "healer",
+        True,
+        "未检测到 OpenAI/Anthropic/Ollama 凭据，auto 模式将降级到 echo 兜底后端。"
+        f" 详情: {detail}",
+    )
 
 
 def _check_sandbox(config: HealConfig, ping: Callable[[], bool] | None = None) -> PreflightCheck:
@@ -91,6 +126,6 @@ def run_preflight(config: HealConfig, docker_ping: Callable[[], bool] | None = N
         _check_target_file(config),
         _check_lsp_command(config),
         _check_sandbox(config, docker_ping),
-        _check_openai_key(),
+        _check_healer(config),
     ]
     return PreflightReport(ok=all(check.ok for check in checks), checks=checks)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from self_healing.config import HealConfig
-from self_healing.healer.llm import LLMHealer
+from self_healing.healer.factory import create_healer
 from self_healing.lsp.client import StdioLSPClient
 from self_healing.patching.apply import write_target
 from self_healing.sandbox.runner import create_sandbox
@@ -30,7 +30,7 @@ def docker_sandbox_node(state: AgentState, config: HealConfig) -> dict:
     return {"exit_code": result.exit_code, "exec_logs": result.logs, "is_fixed": result.exit_code == 0}
 
 
-def healer_node(state: AgentState) -> dict:
+def healer_node(state: AgentState, config: HealConfig | None = None) -> dict:
     attempts = list(state.get("attempts", []))
     attempts.append({
         "iteration": state["iterations"] + 1,
@@ -38,8 +38,15 @@ def healer_node(state: AgentState) -> dict:
         "exit_code": state["exit_code"],
         "log_excerpt": state["exec_logs"][:1000],
     })
-    repaired = LLMHealer().repair(state)
+    healer = create_healer(config.healer) if config is not None else create_healer(_default_healer_config())
+    repaired = healer.repair(state)
     return {"current_code": repaired, "iterations": state["iterations"] + 1, "attempts": attempts, "is_fixed": False}
+
+
+def _default_healer_config():
+    from self_healing.config import HealerConfig
+
+    return HealerConfig()
 
 
 def route_after_verification(state: AgentState):
@@ -63,7 +70,7 @@ def build_graph(config: HealConfig):
     workflow = StateGraph(AgentState)
     workflow.add_node("lsp_analyzer", lambda state: lsp_analysis_node(state, config))
     workflow.add_node("docker_sandbox", lambda state: docker_sandbox_node(state, config))
-    workflow.add_node("healer", healer_node)
+    workflow.add_node("healer", lambda state: healer_node(state, config))
     workflow.set_entry_point("lsp_analyzer")
     workflow.add_edge("lsp_analyzer", "docker_sandbox")
     workflow.add_conditional_edges("docker_sandbox", route_after_verification, {END: END, "healer": "healer"})

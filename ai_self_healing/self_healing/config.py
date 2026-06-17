@@ -21,6 +21,17 @@ class SandboxConfig:
 
 
 @dataclass(frozen=True)
+class HealerConfig:
+    """Healer LLM 配置，支持多种后端。"""
+
+    provider: str = "auto"  # auto | openai | anthropic | ollama | echo
+    model: str = "gpt-4o"
+    temperature: float = 0.0
+    base_url: str | None = None  # 自定义 OpenAI 兼容/Ollama 端点
+    api_key_env: str | None = None  # 显式指定 API Key 环境变量
+
+
+@dataclass(frozen=True)
 class HealConfig:
     project_root: Path
     file_path: str
@@ -29,6 +40,7 @@ class HealConfig:
     allowed_paths: list[str] = field(default_factory=list)
     lsp: LSPConfig = field(default_factory=LSPConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
+    healer: HealerConfig = field(default_factory=HealerConfig)
 
 
 def _load_mapping(path: Path) -> dict[str, Any]:
@@ -57,6 +69,7 @@ def load_config(path: str | Path) -> HealConfig:
         raise ValueError("test_command 必须是字符串或字符串数组。")
     lsp_data = data.get("lsp", {}) or {}
     sandbox_data = data.get("sandbox", {}) or {}
+    healer_data = data.get("healer", {}) or {}
     return HealConfig(
         project_root=root,
         file_path=str(data["file_path"]),
@@ -72,5 +85,12 @@ def load_config(path: str | Path) -> HealConfig:
             timeout_seconds=int(sandbox_data.get("timeout_seconds", 30)),
             workdir=str(sandbox_data.get("workdir", "/app")),
             backend=str(sandbox_data.get("backend", "auto")),
+        ),
+        healer=HealerConfig(
+            provider=str(healer_data.get("provider", "auto")),
+            model=str(healer_data.get("model", "gpt-4o")),
+            temperature=float(healer_data.get("temperature", 0.0)),
+            base_url=(str(healer_data["base_url"]) if healer_data.get("base_url") else None),
+            api_key_env=(str(healer_data["api_key_env"]) if healer_data.get("api_key_env") else None),
         ),
     )

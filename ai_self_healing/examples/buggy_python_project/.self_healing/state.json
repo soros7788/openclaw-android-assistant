@@ -1,15 +1,15 @@
 {
-  "pid": 47820,
-  "started_at": "2026-06-17T14:17:19Z",
-  "last_event_at": "2026-06-17T14:17:26Z",
+  "pid": 11661,
+  "started_at": "2026-06-17T22:42:19Z",
+  "last_event_at": "2026-06-17T22:42:25Z",
   "files_analyzed": 1,
   "runs": 1,
   "fixes_applied": 0,
   "recent_events": [
     {
-      "time": "2026-06-17T14:17:26Z",
+      "time": "2026-06-17T22:42:25Z",
       "status": "graph_error",
-      "error": "Gemini API 错误: 网络错误: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1081)>"
+      "error": "Gemini API 错误: HTTP 502 Bad Gateway"
     }
   ]
 }

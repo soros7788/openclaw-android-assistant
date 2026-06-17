@@ -193,10 +193,10 @@ class GeminiHealer(BaseHealer):
 
     def __init__(self, config: HealerConfig) -> None:
         self.config = config
+        self._relay_url = (config.base_url or "").rstrip("/") if config.base_url else ""
         self._free_key = os.environ.get(config.api_key_env or "GOOGLE_API_KEY", "")
         self._paid_key = os.environ.get("GOOGLE_API_KEY_PAID", "")
         self._model_free = self._DEFAULT_FREE_MODEL
-        # 用户显式配置 gemini model 时采用；否则用性价比最高的默认
         if config.model and "gemini" in str(config.model).lower():
             self._model_paid = config.model
         else:
@@ -213,19 +213,8 @@ class GeminiHealer(BaseHealer):
             return True
         return False
 
-    def _call_once(self, model: str, api_key: str, state: AgentState) -> tuple[str, dict]:
-        """调用单次 Gemini API，返回 (提示, 原始响应体)。
-
-        返回空字符串 '' 当且仅当命中配额错误，便于外层判定是否回退。
-        返回其他错误会直接 raise。
-        """
-        if not api_key:
-            return "", {}
-        url = (
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
-            f":generateContent?key={api_key}"
-        )
-        payload = {
+    def _build_payload(self, state: AgentState) -> dict:
+        return {
             "contents": [{
                 "parts": [{
                     "text": SYSTEM_PROMPT + "\n\n" + _format_user_prompt(state)
@@ -236,6 +225,8 @@ class GeminiHealer(BaseHealer):
                 "candidateCount": 1,
             },
         }
+
+    def _post_json(self, url: str, payload: dict) -> dict:
         request = urllib.request.Request(
             url,
             data=json.dumps(payload).encode("utf-8"),
@@ -243,15 +234,41 @@ class GeminiHealer(BaseHealer):
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=120) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
+            with urllib.request.urlopen(request, timeout=180) as resp:
+                return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             try:
-                body = json.loads(exc.read().decode("utf-8"))
+                return json.loads(exc.read().decode("utf-8"))
             except (ValueError, OSError):
-                body = {"error": {"message": f"HTTP {exc.code} {exc.reason}", "code": exc.code, "status": str(exc.reason)}}
+                return {"error": {"message": f"HTTP {exc.code} {exc.reason}",
+                                   "code": exc.code, "status": str(exc.reason)}}
         except (urllib.error.URLError, OSError, TimeoutError) as exc:
-            body = {"error": {"message": f"网络错误: {exc}", "code": 0, "status": "URLError"}}
+            return {"error": {"message": f"网络错误: {exc}", "code": 0, "status": "URLError"}}
+
+    def _extract_text(self, body: dict) -> str:
+        candidates = body.get("candidates", []) if isinstance(body, dict) else []
+        if not candidates:
+            return ""
+        parts = candidates[0].get("content", {}).get("parts", [])
+        return clean_model_code_output("".join(p.get("text", "") for p in parts))
+
+    def _call_once(self, model: str, api_key: str, state: AgentState) -> tuple[str, dict]:
+        """调用单次 Gemini API，返回 (文本, 原始响应体)。
+
+        返回空字符串 '' 当且仅当命中配额错误，便于外层判定是否回退。
+        返回其他错误会直接 raise。
+        """
+        if self._relay_url:
+            url = self._relay_url
+        else:
+            if not api_key:
+                return "", {}
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
+                f":generateContent?key={api_key}"
+            )
+
+        body = self._post_json(url, self._build_payload(state))
 
         if isinstance(body, dict) and body.get("error"):
             if self._is_quota_error(body):
@@ -260,14 +277,16 @@ class GeminiHealer(BaseHealer):
                 f"Gemini API 错误: {body.get('error', {}).get('message', '未知错误')}"
             )
 
-        candidates = body.get("candidates", []) if isinstance(body, dict) else []
-        if not candidates:
-            return "", body
-
-        parts = candidates[0].get("content", {}).get("parts", [])
-        return clean_model_code_output("".join(p.get("text", "") for p in parts)), body
+        return self._extract_text(body), body
 
     def repair(self, state: AgentState) -> str:  # pragma: no cover - 真实调用
+        if self._relay_url:
+            text, body = self._call_once(self._model_free, "", state)
+            if text:
+                return text
+            err_msg = body.get("error", {}).get("message", "未知错误") if isinstance(body, dict) else "未知错误"
+            raise RuntimeError(f"Gemini relay 调用失败: {err_msg}")
+
         if not (self._free_key or self._paid_key):
             raise RuntimeError("GeminiHealer 需要设置 GOOGLE_API_KEY 或 GOOGLE_API_KEY_PAID。")
 
@@ -287,6 +306,10 @@ class GeminiHealer(BaseHealer):
 
     @classmethod
     def status(cls, config: HealerConfig) -> HealerProviderStatus:
+        if config.base_url:
+            return HealerProviderStatus(
+                "gemini", True, f"使用自定义 Gemini 中继: {config.base_url}"
+            )
         env_name = config.api_key_env or "GOOGLE_API_KEY"
         free = os.environ.get(env_name) or ""
         paid = os.environ.get("GOOGLE_API_KEY_PAID") or ""

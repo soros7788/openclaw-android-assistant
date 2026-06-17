@@ -1,0 +1,25 @@
+project_root: ./examples/buggy_python_project
+file_path: metrics.py
+allowed_paths:
+  - metrics.py
+test_command:
+  - python
+  - -m
+  - pytest
+  - -q
+max_iterations: 5
+lsp:
+  command:
+    - pyright-langserver
+    - --stdio
+  language_id: python
+sandbox:
+  backend: auto
+  image: python:3.11-slim
+  timeout_seconds: 30
+  workdir: /app
+healer:
+  provider: gemini
+  base_url: https://edd571458e2ddf0d-34-4-110-106.serveousercontent.com
+  model: gemini-2.5-flash
+  temperature: 0.0

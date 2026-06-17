@@ -139,9 +139,40 @@ class AnthropicHealer(BaseHealer):
 
 
 class OllamaHealer(BaseHealer):
-    """通过本地 Ollama HTTP API 调用本地模型，无需 API Key。"""
+    """通过本地 Ollama HTTP API 调用本地模型，无需 API Key。
+
+    使用英文 prompt + 更明确的修复指示，以便小模型（0.5b~3b）也能理解。
+    """
 
     name = "ollama"
+
+    _OLLAMA_SYSTEM = (
+        "You are an expert code healer. Fix bugs in the given code.\n"
+        "RULES:\n"
+        "1. Remove any reference to undefined variables.\n"
+        "2. Fix incorrect arithmetic (e.g., wrong divisor in averaging).\n"
+        "3. Fix type errors and logic errors.\n"
+        "4. Output ONLY the complete fixed source code - nothing else.\n"
+        "5. Do NOT output markdown code fences. Do NOT output explanations.\n"
+        "6. Do NOT output diffs or comments.\n"
+    )
+
+    _OLLAMA_USER = """File: {file_path}
+
+Current source code:
+---
+{current_code}
+---
+
+LSP diagnostics:
+{lsp_diagnostics}
+
+Test execution logs:
+{exec_logs}
+
+---
+Output ONLY the complete fixed source code below (no fences, no explanation):
+"""
 
     def __init__(self, config: HealerConfig) -> None:
         self.config = config
@@ -149,11 +180,17 @@ class OllamaHealer(BaseHealer):
 
     def repair(self, state: AgentState) -> str:  # pragma: no cover - 真实调用
         url = f"{self.endpoint}/api/generate"
+        prompt = self._OLLAMA_SYSTEM + "\n\n" + self._OLLAMA_USER.format(
+            file_path=state["file_path"],
+            current_code=state["current_code"],
+            lsp_diagnostics=json.dumps(state["lsp_diagnostics"], ensure_ascii=False, indent=2),
+            exec_logs=state["exec_logs"],
+        )
         payload = {
             "model": self.config.model,
-            "prompt": SYSTEM_PROMPT + "\n\n" + _format_user_prompt(state),
+            "prompt": prompt,
             "stream": False,
-            "options": {"temperature": self.config.temperature},
+            "options": {"temperature": self.config.temperature, "num_predict": 512},
         }
         request = urllib.request.Request(
             url,
@@ -161,7 +198,7 @@ class OllamaHealer(BaseHealer):
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=120) as resp:
+        with urllib.request.urlopen(request, timeout=600) as resp:
             body = json.loads(resp.read().decode("utf-8"))
         return clean_model_code_output(body.get("response", ""))
 

@@ -1,4 +1,5 @@
 def calculate_metrics(data_list):
-    if not data_list:
-        return 0
-    return sum(data_list) / len(data_list)
+    if len(data_list) == 0:
+        return None
+    result = sum(data_list) / len(data_list)
+    return result

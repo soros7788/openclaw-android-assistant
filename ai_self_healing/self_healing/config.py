@@ -25,7 +25,7 @@ class HealerConfig:
     """Healer LLM 配置，支持多种后端。"""
 
     provider: str = "auto"  # auto | openai | anthropic | gemini | ollama | echo
-    model: str = "gpt-4o"
+    model: str = "gpt-4o"  # 选用 gemini 时会自动用 gemini-2.5-flash
     temperature: float = 0.0
     base_url: str | None = None  # 自定义 OpenAI 兼容/Ollama 端点
     api_key_env: str | None = None  # 显式指定 API Key 环境变量

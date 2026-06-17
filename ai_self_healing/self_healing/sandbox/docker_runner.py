@@ -1,16 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from self_healing.sandbox.logs import filter_relevant_logs
+from self_healing.sandbox.local_runner import SandboxResult
 
 
-@dataclass(frozen=True)
-class DockerResult:
-    exit_code: int
-    logs: str
-    timed_out: bool = False
+DockerResult = SandboxResult
+
+
+def docker_daemon_available() -> tuple[bool, str]:
+    try:
+        import docker
+    except ImportError:
+        return False, "未安装 docker Python SDK。"
+    try:
+        docker.from_env().ping()
+        return True, "Docker daemon 可访问。"
+    except Exception as exc:
+        return False, f"Docker daemon 不可访问: {exc}"
 
 
 class DockerSandbox:

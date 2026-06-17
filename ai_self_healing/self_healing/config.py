@@ -17,6 +17,7 @@ class SandboxConfig:
     image: str = "python:3.11-slim"
     timeout_seconds: int = 30
     workdir: str = "/app"
+    backend: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -70,5 +71,6 @@ def load_config(path: str | Path) -> HealConfig:
             image=str(sandbox_data.get("image", "python:3.11-slim")),
             timeout_seconds=int(sandbox_data.get("timeout_seconds", 30)),
             workdir=str(sandbox_data.get("workdir", "/app")),
+            backend=str(sandbox_data.get("backend", "auto")),
         ),
     )

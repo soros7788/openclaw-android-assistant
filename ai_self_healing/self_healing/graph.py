@@ -4,7 +4,7 @@ from self_healing.config import HealConfig
 from self_healing.healer.llm import LLMHealer
 from self_healing.lsp.client import StdioLSPClient
 from self_healing.patching.apply import write_target
-from self_healing.sandbox.docker_runner import DockerSandbox
+from self_healing.sandbox.runner import create_sandbox
 from self_healing.state import AgentState
 
 
@@ -26,11 +26,7 @@ def docker_sandbox_node(state: AgentState, config: HealConfig) -> dict:
             "exec_logs": "Skipped dynamic execution due to LSP errors.",
             "is_fixed": False,
         }
-    result = DockerSandbox(
-        image=config.sandbox.image,
-        timeout_seconds=config.sandbox.timeout_seconds,
-        workdir=config.sandbox.workdir,
-    ).run(state["project_root"], state["test_command"])
+    result = create_sandbox(config.sandbox).run(state["project_root"], state["test_command"])
     return {"exit_code": result.exit_code, "exec_logs": result.logs, "is_fixed": result.exit_code == 0}
 
 

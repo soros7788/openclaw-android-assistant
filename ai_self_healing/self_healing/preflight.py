@@ -8,6 +8,7 @@ from typing import Callable
 
 from self_healing.config import HealConfig
 from self_healing.patching.safety import resolve_safe_path
+from self_healing.sandbox.docker_runner import docker_daemon_available
 
 
 @dataclass(frozen=True)
@@ -63,19 +64,25 @@ def _check_openai_key() -> PreflightCheck:
     return PreflightCheck("openai_api_key", False, "缺少 OPENAI_API_KEY，Healer 无法调用默认 LLM。")
 
 
-def _check_docker(ping: Callable[[], bool] | None = None) -> PreflightCheck:
+def _check_sandbox(config: HealConfig, ping: Callable[[], bool] | None = None) -> PreflightCheck:
+    backend = config.sandbox.backend.lower()
+    if backend == "local":
+        return PreflightCheck("sandbox", True, "使用 local 沙盒后端，不需要 Docker daemon。")
     if ping is not None:
-        return PreflightCheck("docker", ping(), "Docker ping 已执行。")
-    try:
-        import docker
-    except ImportError:
-        return PreflightCheck("docker", False, "未安装 docker Python SDK。")
-    try:
-        client = docker.from_env()
-        client.ping()
-        return PreflightCheck("docker", True, "Docker daemon 可访问。")
-    except Exception as exc:
-        return PreflightCheck("docker", False, f"Docker daemon 不可访问: {exc}")
+        ok = ping()
+        if ok:
+            return PreflightCheck("sandbox", True, "Docker ping 已执行。")
+        if backend == "auto":
+            return PreflightCheck("sandbox", True, "Docker 不可用，auto 模式将降级到 local 沙盒。")
+        return PreflightCheck("sandbox", False, "Docker ping 失败，且当前配置要求 docker 后端。")
+    docker_ok, docker_message = docker_daemon_available()
+    if docker_ok:
+        return PreflightCheck("sandbox", True, docker_message)
+    if backend == "auto":
+        return PreflightCheck("sandbox", True, f"{docker_message}；auto 模式将降级到 local 沙盒。")
+    if backend == "docker":
+        return PreflightCheck("sandbox", False, docker_message)
+    return PreflightCheck("sandbox", False, f"未知 sandbox backend: {config.sandbox.backend}")
 
 
 def run_preflight(config: HealConfig, docker_ping: Callable[[], bool] | None = None) -> PreflightReport:
@@ -83,7 +90,7 @@ def run_preflight(config: HealConfig, docker_ping: Callable[[], bool] | None = N
         _check_project_root(config),
         _check_target_file(config),
         _check_lsp_command(config),
-        _check_docker(docker_ping),
+        _check_sandbox(config, docker_ping),
         _check_openai_key(),
     ]
     return PreflightReport(ok=all(check.ok for check in checks), checks=checks)

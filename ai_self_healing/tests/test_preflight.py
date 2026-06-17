@@ -12,7 +12,13 @@ from self_healing.config import HealConfig, LSPConfig, SandboxConfig
 from self_healing.preflight import run_preflight
 
 
-def _config(root: Path, *, command: list[str] | None = None, file_path: str = "metrics.py") -> HealConfig:
+def _config(
+    root: Path,
+    *,
+    command: list[str] | None = None,
+    file_path: str = "metrics.py",
+    backend: str = "auto",
+) -> HealConfig:
     return HealConfig(
         project_root=root,
         file_path=file_path,
@@ -20,7 +26,7 @@ def _config(root: Path, *, command: list[str] | None = None, file_path: str = "m
         max_iterations=2,
         allowed_paths=["metrics.py"],
         lsp=LSPConfig(command=command or ["python"], language_id="python"),
-        sandbox=SandboxConfig(image="python:3.11-slim", timeout_seconds=30, workdir="/app"),
+        sandbox=SandboxConfig(image="python:3.11-slim", timeout_seconds=30, workdir="/app", backend=backend),
     )
 
 
@@ -53,6 +59,25 @@ class PreflightTests(unittest.TestCase):
             self.assertFalse(report.ok)
             self.assertFalse(next(check.ok for check in report.checks if check.name == "lsp_command"))
 
+    def test_auto_backend_passes_when_docker_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "metrics.py").write_text("x = 1\n", encoding="utf-8")
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+                report = run_preflight(_config(root, backend="auto"), docker_ping=lambda: False)
+            self.assertTrue(report.ok)
+            sandbox_check = next(check for check in report.checks if check.name == "sandbox")
+            self.assertIn("降级到 local 沙盒", sandbox_check.message)
+
+    def test_docker_backend_fails_when_docker_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "metrics.py").write_text("x = 1\n", encoding="utf-8")
+            with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
+                report = run_preflight(_config(root, backend="docker"), docker_ping=lambda: False)
+            self.assertFalse(report.ok)
+            self.assertFalse(next(check.ok for check in report.checks if check.name == "sandbox"))
+
     def test_preflight_rejects_disallowed_target_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -74,15 +99,15 @@ class PreflightTests(unittest.TestCase):
                     "allowed_paths": ["metrics.py"],
                     "test_command": ["python", "-m", "pytest", "-q"],
                     "lsp": {"command": ["python"], "language_id": "python"},
-                    "sandbox": {"image": "python:3.11-slim", "timeout_seconds": 30, "workdir": "/app"},
+                    "sandbox": {"image": "python:3.11-slim", "timeout_seconds": 30, "workdir": "/app", "backend": "auto"},
                 }),
                 encoding="utf-8",
             )
             with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch(
-                "self_healing.preflight._check_docker"
-            ) as mock_docker:
+                "self_healing.preflight._check_sandbox"
+            ) as mock_sandbox:
                 from self_healing.preflight import PreflightCheck
-                mock_docker.return_value = PreflightCheck("docker", True, "Docker daemon 可访问。")
+                mock_sandbox.return_value = PreflightCheck("sandbox", True, "Docker daemon 可访问。")
                 from self_healing.cli import main
                 with patch("sys.stdout", new_callable=StringIO) as stdout:
                     code = main(["--config", str(config_path), "--preflight-only"])

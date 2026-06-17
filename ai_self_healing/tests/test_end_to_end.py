@@ -18,7 +18,7 @@ def _build_config() -> HealConfig:
         max_iterations=3,
         allowed_paths=["metrics.py"],
         lsp=LSPConfig(command=["pyright-langserver", "--stdio"], language_id="python"),
-        sandbox=SandboxConfig(image="python:3.11-slim", timeout_seconds=30, workdir="/app"),
+        sandbox=SandboxConfig(image="python:3.11-slim", timeout_seconds=30, workdir="/app", backend="auto"),
     )
 
 
@@ -61,8 +61,8 @@ class TestEndToEndGraph闭环(unittest.TestCase):
             with patch(
                 "self_healing.graph.StdioLSPClient"
             ) as mock_lsp_cls, patch(
-                "self_healing.graph.DockerSandbox"
-            ) as mock_docker_cls, patch(
+                "self_healing.graph.create_sandbox"
+            ) as mock_create_sandbox, patch(
                 "self_healing.graph.LLMHealer"
             ) as mock_healer_cls, patch(
                 "self_healing.patching.apply.resolve_safe_path"
@@ -72,9 +72,9 @@ class TestEndToEndGraph闭环(unittest.TestCase):
                 mock_lsp_instance.diagnostics_for.return_value = mock_diagnostics
                 mock_lsp_cls.return_value.__enter__.return_value = mock_lsp_instance
 
-                mock_docker_instance = MagicMock()
-                mock_docker_instance.run.return_value = mock_result
-                mock_docker_cls.return_value = mock_docker_instance
+                mock_sandbox_instance = MagicMock()
+                mock_sandbox_instance.run.return_value = mock_result
+                mock_create_sandbox.return_value = mock_sandbox_instance
 
                 call_count = [0]
 
@@ -120,8 +120,8 @@ class TestEndToEndGraph闭环(unittest.TestCase):
             with patch(
                 "self_healing.graph.StdioLSPClient"
             ) as mock_lsp_cls, patch(
-                "self_healing.graph.DockerSandbox"
-            ) as mock_docker_cls, patch(
+                "self_healing.graph.create_sandbox"
+            ) as mock_create_sandbox, patch(
                 "self_healing.patching.apply.resolve_safe_path"
             ) as mock_resolve:
 
@@ -129,9 +129,9 @@ class TestEndToEndGraph闭环(unittest.TestCase):
                 mock_lsp_instance.diagnostics_for.return_value = mock_diagnostics
                 mock_lsp_cls.return_value.__enter__.return_value = mock_lsp_instance
 
-                mock_docker_instance = MagicMock()
-                mock_docker_instance.run.return_value = mock_result
-                mock_docker_cls.return_value = mock_docker_instance
+                mock_sandbox_instance = MagicMock()
+                mock_sandbox_instance.run.return_value = mock_result
+                mock_create_sandbox.return_value = mock_sandbox_instance
 
                 fake_path = fake_dir / "metrics.py"
                 mock_resolve.return_value = fake_path
@@ -177,13 +177,13 @@ class TestEndToEndGraph闭环(unittest.TestCase):
             mock_result.exit_code = 1
             mock_result.logs = "FAILED"
             with patch(
-                "self_healing.graph.DockerSandbox"
-            ) as mock_docker_cls, patch(
+                "self_healing.graph.create_sandbox"
+            ) as mock_create_sandbox, patch(
                 "self_healing.patching.apply.resolve_safe_path"
             ) as mock_resolve:
-                mock_docker_instance = MagicMock()
-                mock_docker_instance.run.return_value = mock_result
-                mock_docker_cls.return_value = mock_docker_instance
+                mock_sandbox_instance = MagicMock()
+                mock_sandbox_instance.run.return_value = mock_result
+                mock_create_sandbox.return_value = mock_sandbox_instance
                 mock_resolve.return_value = fake_path
                 result2 = docker_sandbox_node(clean_lsp_state, config)
             self.assertFalse(result2["is_fixed"])

@@ -14,6 +14,7 @@ lsp:
     - --stdio
   language_id: python
 sandbox:
+  backend: auto
   image: python:3.11-slim
   timeout_seconds: 30
   workdir: /app

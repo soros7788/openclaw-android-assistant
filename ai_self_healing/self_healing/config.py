@@ -24,7 +24,7 @@ class SandboxConfig:
 class HealerConfig:
     """Healer LLM 配置，支持多种后端。"""
 
-    provider: str = "auto"  # auto | openai | anthropic | ollama | echo
+    provider: str = "auto"  # auto | openai | anthropic | gemini | ollama | echo
     model: str = "gpt-4o"
     temperature: float = 0.0
     base_url: str | None = None  # 自定义 OpenAI 兼容/Ollama 端点

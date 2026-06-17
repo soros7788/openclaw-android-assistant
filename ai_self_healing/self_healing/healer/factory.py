@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Healer LLM 后端工厂，支持 OpenAI / Anthropic / Ollama / Echo。
+"""Healer LLM 后端工厂，支持 OpenAI / Anthropic / Gemini / Ollama / Echo。
 
 设计目标：
 - 不再硬绑 OPENAI_API_KEY；任一后端可用即可完成自愈。
@@ -177,15 +177,75 @@ class OllamaHealer(BaseHealer):
         return HealerProviderStatus("ollama", False, f"Ollama 状态码异常: {endpoint}")
 
 
+class GeminiHealer(BaseHealer):
+    """通过 Google Gemini REST API 调用 Gemini 模型。
+
+    使用 GOOGLE_API_KEY 环境变量（或通过 api_key_env 配置自定义变量名）。
+    模型默认为 gemini-2.0-flash，性价比最高且代码能力强。
+    """
+
+    name = "gemini"
+
+    def __init__(self, config: HealerConfig) -> None:
+        self.config = config
+        self._api_key = os.environ.get(config.api_key_env or "GOOGLE_API_KEY", "")
+        self._model = self.config.model or "gemini-2.0-flash"
+
+    def repair(self, state: AgentState) -> str:  # pragma: no cover - 真实调用
+        if not self._api_key:
+            raise RuntimeError("GeminiHealer 需要 GOOGLE_API_KEY 环境变量。")
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}"
+            f":generateContent?key={self._api_key}"
+        )
+        payload = {
+            "contents": [{
+                "parts": [{
+                    "text": SYSTEM_PROMPT + "\n\n" + _format_user_prompt(state)
+                }]
+            }],
+            "generationConfig": {
+                "temperature": self.config.temperature,
+                "candidateCount": 1,
+            },
+        }
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=120) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+
+        candidates = body.get("candidates", [])
+        if not candidates:
+            error_msg = body.get("error", {}).get("message", "未知错误")
+            raise RuntimeError(f"Gemini API 返回错误: {error_msg}")
+
+        parts = candidates[0].get("content", {}).get("parts", [])
+        return clean_model_code_output("".join(p.get("text", "") for p in parts))
+
+    @classmethod
+    def status(cls, config: HealerConfig) -> HealerProviderStatus:
+        env_name = config.api_key_env or "GOOGLE_API_KEY"
+        if os.environ.get(env_name):
+            model = config.model or "gemini-2.0-flash"
+            return HealerProviderStatus("gemini", True, f"{env_name} 已配置，使用模型 {model}。")
+        return HealerProviderStatus("gemini", False, f"缺少环境变量 {env_name}。")
+
+
 PROVIDERS: dict[str, type[BaseHealer]] = {
     "openai": OpenAIHealer,
     "anthropic": AnthropicHealer,
+    "gemini": GeminiHealer,
     "ollama": OllamaHealer,
     "echo": EchoHealer,
 }
 
 # auto 模式按优先级选择第一个可用的后端
-AUTO_ORDER = ("openai", "anthropic", "ollama", "echo")
+AUTO_ORDER = ("openai", "anthropic", "gemini", "ollama", "echo")
 
 
 def detect_provider_statuses(config: HealerConfig) -> list[HealerProviderStatus]:

@@ -8,6 +8,7 @@ from self_healing.config import HealerConfig
 from self_healing.healer.factory import (
     AUTO_ORDER,
     EchoHealer,
+    GeminiHealer,
     HealerProviderStatus,
     OllamaHealer,
     OpenAIHealer,
@@ -39,7 +40,7 @@ def _state() -> AgentState:
 
 class HealerFactoryTests(unittest.TestCase):
     def test_auto_order_lists_all_providers(self):
-        self.assertEqual(AUTO_ORDER, ("openai", "anthropic", "ollama", "echo"))
+        self.assertEqual(AUTO_ORDER, ("openai", "anthropic", "gemini", "ollama", "echo"))
 
     def test_resolve_provider_picks_openai_when_key_available(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True):
@@ -101,9 +102,14 @@ class HealerFactoryTests(unittest.TestCase):
                 "status",
                 return_value=HealerProviderStatus("ollama", False, "n/a"),
             ):
-                statuses = detect_provider_statuses(HealerConfig(provider="auto"))
+                with patch.object(
+                    GeminiHealer,
+                    "status",
+                    return_value=HealerProviderStatus("gemini", False, "n/a"),
+                ):
+                    statuses = detect_provider_statuses(HealerConfig(provider="auto"))
         names = {s.name for s in statuses}
-        self.assertEqual(names, {"openai", "anthropic", "ollama", "echo"})
+        self.assertEqual(names, {"openai", "anthropic", "gemini", "ollama", "echo"})
 
 
 if __name__ == "__main__":

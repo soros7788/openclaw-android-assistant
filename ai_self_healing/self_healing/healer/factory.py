@@ -361,8 +361,87 @@ class GeminiHealer(BaseHealer):
         return HealerProviderStatus("gemini", False, f"缺少环境变量 {env_name} 或 GOOGLE_API_KEY_PAID。")
 
 
+class OpenAICompatHealer(BaseHealer):
+    """轻量级 OpenAI 兼容 API 客户端（不依赖 langchain）。
+
+    支持所有 OpenAI 兼容的 API 转发服务，例如:
+    - free.v36.cm (公益免费 GPT 转发)
+    - api.deepseek.com
+    - dashscope.aliyuncs.com
+    """
+
+    name = "openai_compat"
+
+    def __init__(self, config: HealerConfig) -> None:
+        self.config = config
+        self.endpoint = (config.base_url or "https://api.openai.com/v1").rstrip("/")
+        self.api_key = os.environ.get(config.api_key_env or "OPENAI_API_KEY", "")
+        if not self.api_key:
+            raise RuntimeError(
+                f"OpenAICompatHealer 需要设置 {config.api_key_env or 'OPENAI_API_KEY'} 环境变量。"
+            )
+
+    def repair(self, state: AgentState) -> str:
+        user_prompt = _format_user_prompt(state)
+        payload = json.dumps({
+            "model": self.config.model or "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": self.config.temperature,
+            "max_tokens": 2048,
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.endpoint}/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=300) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                err_msg = body.get("error", {}).get("message", str(body)) if isinstance(body, dict) else str(body)
+            except (ValueError, OSError):
+                err_msg = f"HTTP {exc.code}: {exc.reason}"
+            raise RuntimeError(f"OpenAI 兼容 API 调用失败: {err_msg}")
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            raise RuntimeError(f"网络错误: {exc}")
+
+        if not isinstance(body, dict):
+            raise RuntimeError(f"API 返回格式异常: {body}")
+        if "error" in body:
+            raise RuntimeError(
+                f"API 错误: {body['error'].get('message', str(body['error']))}"
+            )
+        choices = body.get("choices", [])
+        if not choices:
+            raise RuntimeError("API 返回为空 choices。")
+        return clean_model_code_output(choices[0].get("message", {}).get("content", ""))
+
+    @classmethod
+    def status(cls, config: HealerConfig) -> HealerProviderStatus:
+        env_name = config.api_key_env or "OPENAI_API_KEY"
+        key = os.environ.get(env_name, "")
+        endpoint = config.base_url or "https://api.openai.com/v1"
+        if key:
+            return HealerProviderStatus(
+                "openai_compat", True, f"API Key 已配置 ({env_name}) -> {endpoint}"
+            )
+        return HealerProviderStatus(
+            "openai_compat", False, f"缺少环境变量 {env_name}。"
+        )
+
+
 PROVIDERS: dict[str, type[BaseHealer]] = {
     "openai": OpenAIHealer,
+    "openai_compat": OpenAICompatHealer,
     "anthropic": AnthropicHealer,
     "gemini": GeminiHealer,
     "ollama": OllamaHealer,
@@ -370,6 +449,7 @@ PROVIDERS: dict[str, type[BaseHealer]] = {
 }
 
 # auto 模式按优先级选择第一个可用的后端
+# openai_compat 不在 auto 列表中，需要显式配置 provider: openai_compat 才会使用
 AUTO_ORDER = ("openai", "anthropic", "gemini", "ollama", "echo")
 
 

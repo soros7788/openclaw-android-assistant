@@ -1,0 +1,41 @@
+{
+  "id": "lilys",
+  "activation": {
+    "onStartup": false
+  },
+  "setup": {
+    "providers": [
+      {
+        "id": "lilys",
+        "envVars": ["LILYS_API_KEY"]
+      }
+    ]
+  },
+  "uiHints": {
+    "apiKey": {
+      "label": "LilysAI API Key",
+      "help": "LilysAI API key (fallback: LILYS_API_KEY env var).",
+      "sensitive": true,
+      "placeholder": "lilys-..."
+    },
+    "baseUrl": {
+      "label": "LilysAI Base URL",
+      "help": "LilysAI API base URL override."
+    }
+  },
+  "contracts": {
+    "tools": ["lilys_summarize_url", "lilys_create_summary", "lilys_get_summary_status", "lilys_list_models"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiKey": {
+        "type": ["string", "object"]
+      },
+      "baseUrl": {
+        "type": "string"
+      }
+    }
+  }
+}
